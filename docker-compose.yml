@@ -1,0 +1,41 @@
+version: "3.9"
+
+services:
+
+  db:
+    image: postgres:16
+    container_name: harvey-hrms-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: harvey
+      POSTGRES_PASSWORD: harvey123
+      POSTGRES_DB: harvey_hrms
+    ports:
+      - "5432:5432"
+    volumes:
+      - harvey_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U harvey -d harvey_hrms"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build: .
+    container_name: harvey-hrms-api
+    restart: unless-stopped
+    ports:
+      - "8001:8001"
+    environment:
+      POSTGRES_USER: harvey
+      POSTGRES_PASSWORD: harvey123
+      POSTGRES_DB: harvey_hrms
+      POSTGRES_HOST: db
+      POSTGRES_PORT: 5432
+      API_TOKEN: harvey-secret-token-2026
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  harvey_pg_data:

@@ -1,9 +1,12 @@
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Depends
 from typing import List, Optional
-from app.data.mock_data import EMPLOYEES
+from sqlalchemy.orm import Session
+from app.database import get_db
+from app.models.db_models import Employee as EmployeeModel
 from app.models.schemas import Employee
+from app.auth import verify_token
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(verify_token)])
 
 
 @router.get("", response_model=List[Employee])
@@ -11,47 +14,48 @@ def list_employees(
     department_id: Optional[str] = Query(None),
     status: Optional[str] = Query(None),
     location: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
 ):
-    results = EMPLOYEES
+    query = db.query(EmployeeModel)
     if department_id:
-        results = [e for e in results if e["department_id"] == department_id]
+        query = query.filter(EmployeeModel.department_id == department_id)
     if status:
-        results = [e for e in results if e["status"] == status]
+        query = query.filter(EmployeeModel.status == status)
     if location:
-        results = [e for e in results if location.lower() in e["location"].lower()]
-    return results
+        query = query.filter(EmployeeModel.location.ilike(f"%{location}%"))
+    return query.all()
 
 
 @router.get("/search/by-email", response_model=Employee)
-def get_employee_by_email(email: str = Query(...)):
-    for emp in EMPLOYEES:
-        if emp["email"].lower() == email.lower():
-            return emp
-    raise HTTPException(status_code=404, detail=f"No employee found with email '{email}'.")
+def get_employee_by_email(email: str = Query(...), db: Session = Depends(get_db)):
+    emp = db.query(EmployeeModel).filter(EmployeeModel.email.ilike(email)).first()
+    if not emp:
+        raise HTTPException(status_code=404, detail=f"No employee found with email '{email}'.")
+    return emp
 
 
 @router.get("/search/by-name", response_model=List[Employee])
-def search_employees_by_name(name: str = Query(...)):
-    results = [
-        e for e in EMPLOYEES
-        if name.lower() in e["first_name"].lower() or name.lower() in e["last_name"].lower()
-    ]
+def search_employees_by_name(name: str = Query(...), db: Session = Depends(get_db)):
+    results = db.query(EmployeeModel).filter(
+        EmployeeModel.first_name.ilike(f"%{name}%") |
+        EmployeeModel.last_name.ilike(f"%{name}%")
+    ).all()
     if not results:
         raise HTTPException(status_code=404, detail=f"No employees found matching '{name}'.")
     return results
 
 
 @router.get("/{employee_id}", response_model=Employee)
-def get_employee(employee_id: str):
-    for emp in EMPLOYEES:
-        if emp["id"] == employee_id:
-            return emp
-    raise HTTPException(status_code=404, detail=f"Employee '{employee_id}' not found.")
+def get_employee(employee_id: str, db: Session = Depends(get_db)):
+    emp = db.query(EmployeeModel).filter(EmployeeModel.id == employee_id).first()
+    if not emp:
+        raise HTTPException(status_code=404, detail=f"Employee '{employee_id}' not found.")
+    return emp
 
 
 @router.get("/{employee_id}/reports", response_model=List[Employee])
-def get_direct_reports(employee_id: str):
-    manager_ids = [e["id"] for e in EMPLOYEES]
-    if employee_id not in manager_ids:
+def get_direct_reports(employee_id: str, db: Session = Depends(get_db)):
+    emp = db.query(EmployeeModel).filter(EmployeeModel.id == employee_id).first()
+    if not emp:
         raise HTTPException(status_code=404, detail=f"Employee '{employee_id}' not found.")
-    return [e for e in EMPLOYEES if e.get("manager_id") == employee_id]
+    return db.query(EmployeeModel).filter(EmployeeModel.manager_id == employee_id).all()

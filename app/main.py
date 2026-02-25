@@ -1,7 +1,21 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from contextlib import asynccontextmanager
 
 from app.routers import employees, jobs, candidates, interviews, departments, onboarding
+from app.database import engine
+from app.models import db_models
+from app.seed import seed
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Runs on startup
+    db_models.Base.metadata.create_all(bind=engine)
+    seed()
+    yield
+    # Runs on shutdown (nothing needed here)
+
 
 app = FastAPI(
     title="Harvey Mock HRMS API",
@@ -9,6 +23,7 @@ app = FastAPI(
     version="1.0.0",
     docs_url="/docs",
     redoc_url="/redoc",
+    lifespan=lifespan,
 )
 
 app.add_middleware(
